@@ -15,14 +15,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       body: JSON.stringify(request.body)
     })
       .then(async (response) => {
-        // Always try to parse as JSON, regardless of status code.
-        // X's GraphQL API may return JSON errors even for non-2xx responses.
+        // Read the body once as text, then try to parse as JSON.
+        // This avoids "body stream already read" errors.
+        const text = await response.text();
         let data;
         try {
-          data = await response.json();
+          data = JSON.parse(text);
         } catch (e) {
-          // If JSON parsing fails, include the raw status and text.
-          const text = await response.text();
           throw new Error(
             `Failed to parse response as JSON. Status: ${response.status}, Body: ${text.slice(0, 200)}`
           );
@@ -32,7 +31,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
         return data;
       })
-      .then((data) => sendResponse({ success: true, data }))
+      .then((data) => {
+        console.log('GraphQL response:', data);
+        sendResponse({ success: true, data });
+      })
       .catch((error) => {
         console.error('GraphQL fetch error:', error);
         sendResponse({ success: false, error: error.message });
