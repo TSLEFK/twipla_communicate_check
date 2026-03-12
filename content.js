@@ -2,7 +2,7 @@
 // Injected into Twipla pages to check community membership for X/Twitter links.
 
 (async function () {
-  const COMMUNITY_ID = '1861234567890123456';
+  const COMMUNITY_ID = '1508768613662343173';
 
   function extractUsernameFromUrl(href) {
     try {

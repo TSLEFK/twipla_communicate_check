@@ -4,22 +4,28 @@
 // NOTE: this relies on an internal, undocumented API and the queryId may change.
 // update QUERY_ID when necessary.
 const GRAPHQL_BASE = 'https://x.com/i/api/graphql';
-const QUERY_ID = 'CommunityMembers'; // placeholder, may need real value
-const PAGE_SIZE = 1000;
+const QUERY_ID = 'bJL6MePns78FJAY930RqDQ';
+const QUERY_ENDPOINT = 'CommunityMembersSlice';
+const PAGE_SIZE = 20;
 const CACHE_KEY = 'community_members';
 const CACHE_TTL = 1000 * 60 * 60; // 1 hour
 
 async function fetchCommunityPage(communityId, cursor) {
-  const url = new URL(`${GRAPHQL_BASE}/${QUERY_ID}/CommunityMembers`);
-  url.searchParams.set('communityId', communityId);
-  url.searchParams.set('count', PAGE_SIZE);
-  if (cursor) url.searchParams.set('cursor', cursor);
+  const url = `${GRAPHQL_BASE}/${QUERY_ID}/${QUERY_ENDPOINT}`;
+  const variables = {
+    community_rest_id: communityId,
+    count: PAGE_SIZE
+  };
+  if (cursor) variables.cursor = cursor;
 
-  const response = await fetch(url.toString(), {
+  const response = await fetch(url, {
+    method: 'POST',
     credentials: 'include',
     headers: {
+      'content-type': 'application/json',
       'accept': 'application/json, text/javascript, */*; q=0.01'
-    }
+    },
+    body: JSON.stringify({ variables })
   });
   if (!response.ok) {
     throw new Error(`GraphQL request failed: ${response.status}`);
@@ -38,14 +44,14 @@ async function fetchCommunityMembers(communityId) {
 
   do {
     const data = await fetchCommunityPage(communityId, cursor);
-    const slice = data?.data?.communityMembersSlice;
+    const slice = data?.data?.community_by_rest_id?.members_slice;
     if (!slice || !Array.isArray(slice.items)) break;
 
     for (const item of slice.items) {
-      const name = item?.user_results?.result?.legacy?.screen_name;
-      if (name) members.push(name);
+      const screenName = item?.result?.community_relationship?.user_results?.result?.legacy?.screen_name;
+      if (screenName) members.push(screenName);
     }
-    cursor = slice.cursor || slice.next_cursor;
+    cursor = slice.continuation || slice.cursor || slice.next_cursor;
   } while (cursor);
 
   // remove duplicates just in case
