@@ -10,6 +10,12 @@ const PAGE_SIZE = 20;
 const CACHE_KEY = 'community_members';
 const CACHE_TTL = 1000 * 60 * 60; // 1 hour
 
+// fetchCommunityPage is intended to be called from a Twipla extension
+// content script or background script.  Because the request targets
+// an internal x.com endpoint that doesn't allow cross‑site credentials,
+// we explicitly avoid sending cookies/credentials.  Calling this from a
+// normal web page off a different origin will hit CORS errors unless
+// the request is proxied.
 async function fetchCommunityPage(communityId, cursor) {
   const url = `${GRAPHQL_BASE}/${QUERY_ID}/${QUERY_ENDPOINT}`;
   const variables = {
@@ -18,9 +24,16 @@ async function fetchCommunityPage(communityId, cursor) {
   };
   if (cursor) variables.cursor = cursor;
 
+  // When running inside the Twipla extension we cannot send
+  // credentials to x.com because the remote endpoint does not
+  // set `Access-Control-Allow-Credentials: true` on its preflight
+  // response.  Including credentials triggers a CORS failure
+  // (see the devtools error) so we omit them here.  If you need
+  // to authenticate, proxy the request through a server you control
+  // instead of calling the GraphQL API directly from the page.
   const response = await fetch(url, {
     method: 'POST',
-    credentials: 'include',
+    // credentials: 'omit', // explicit but unnecessary, omitted by default
     headers: {
       'content-type': 'application/json',
       'accept': 'application/json, text/javascript, */*; q=0.01'

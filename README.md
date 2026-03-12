@@ -5,7 +5,10 @@ This repository implements a simple Google Chrome extension that inspects Twipla
 ## Features
 
 * Scrapes Twipla pages for `x.com` or `twitter.com` profile links.
-* Fetches and caches members of a hard‑coded community using X's internal GraphQL API.
+* Fetches and caches members of a hard‑coded community using X's internal GraphQL API.  
+  Requests are sent without credentials (`credentials: omit`) because the
+  API does not permit cross‑origin cookies; including them triggers a
+  CORS error when running from the Twipla extension.
 * Displays a green **✔ Community** badge next to links of members.
 * Caches the member list in `chrome.storage.local` for one hour to minimize API calls.
 
@@ -26,6 +29,13 @@ content.js         # DOM manipulation on Twipla pages
 ```
 
 ## Configuration
+
+> **CORS warning:** the network code lives in `communityApi.js`.  It
+> assumes you're executing from a Twipla extension; it intentionally
+> avoids sending cookies/credentials to `x.com` because the remote server
+> doesn't return `Access-Control-Allow-Credentials: true`.  If you need
+> authenticated requests you'll have to proxy through a backend server.
+
 
 * The community ID is currently hard‑coded in `content.js` as `1861234567890123456`.
 * The GraphQL query ID used by the unofficial API lives in `communityApi.js` as `QUERY_ID`.  This value can change over time; update it if requests start failing.
