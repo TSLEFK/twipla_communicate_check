@@ -10,9 +10,12 @@ const PAGE_SIZE = 20;
 const CACHE_KEY = 'community_members';
 const CACHE_TTL = 1000 * 60 * 60; // 1 hour
 
-// fetchCommunityPage is intended to be called from a Twipla extension
-// content script.  Because the manifest declares host_permissions for\n// https://x.com/*, the content script injects into both Twipla and X pages.  
-// When called from within an x.com page context, fetch with\n// credentials: 'include' can include X.com cookies, allowing authentication\n// with the internal GraphQL API.\nasync function fetchCommunityPage(communityId, cursor) {
+// fetchCommunityPage is intended to be called from a Twipla extension content script.
+// Because the manifest declares host_permissions for https://x.com/*, the content script
+// injects into both Twipla and X pages. When called from within an x.com page context,
+// fetch with credentials: 'include' can include X.com cookies, allowing authentication
+// with the internal GraphQL API.
+async function fetchCommunityPage(communityId, cursor) {
   const url = `${GRAPHQL_BASE}/${QUERY_ID}/${QUERY_ENDPOINT}`;
   const variables = {
     community_rest_id: communityId,
