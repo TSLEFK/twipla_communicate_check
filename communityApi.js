@@ -10,11 +10,8 @@ const PAGE_SIZE = 20;
 const CACHE_KEY = 'community_members';
 const CACHE_TTL = 1000 * 60 * 60; // 1 hour
 
-// fetchCommunityPage is intended to be called from a Twipla extension content script.
-// Because the manifest declares host_permissions for https://x.com/*, the content script
-// injects into both Twipla and X pages. When called from within an x.com page context,
-// fetch with credentials: 'include' can include X.com cookies, allowing authentication
-// with the internal GraphQL API.
+// fetchCommunityPage fetches GraphQL data from X.com through the service worker
+// to avoid CORS errors when called from Twipla pages.
 async function fetchCommunityPage(communityId, cursor) {
   const url = `${GRAPHQL_BASE}/${QUERY_ID}/${QUERY_ENDPOINT}`;
   const variables = {
@@ -23,22 +20,19 @@ async function fetchCommunityPage(communityId, cursor) {
   };
   if (cursor) variables.cursor = cursor;
 
-  // When running as a content script on x.com, fetch can use 'include' to
-  // send X.com cookies for authentication. This resolves 403 errors that occur
-  // when credentials are omitted.
-  const response = await fetch(url, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'content-type': 'application/json',
-      'accept': 'application/json, text/javascript, */*; q=0.01'
-    },
-    body: JSON.stringify({ variables })
+  // Relay the request through the service worker rather than calling fetch directly.
+  // This avoids CORS restrictions that would apply when fetching from twipla.jp to x.com.
+  const response = await chrome.runtime.sendMessage({
+    action: 'fetchGraphQL',
+    url,
+    body: { variables }
   });
-  if (!response.ok) {
-    throw new Error(`GraphQL request failed: ${response.status}`);
+
+  if (!response.success) {
+    throw new Error(`GraphQL request failed: ${response.error}`);
   }
-  return response.json();
+
+  return response.data;
 }
 
 /**

@@ -2,11 +2,6 @@
 // Injected into Twipla pages to check community membership for X/Twitter links.
 
 (async function () {
-  // Only run on Twipla event pages; skip when loaded on X.com itself
-  if (!window.location.hostname.includes('twipla.jp')) {
-    return;
-  }
-
   const COMMUNITY_ID = '1508768613662343173';
 
   function extractUsernameFromUrl(href) {
