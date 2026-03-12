@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "X Community Checker",
+  "version": "1.0",
+  "description": "Detects whether Twitter (X) accounts on Twipla event pages belong to a specific X community.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://x.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://twipla.jp/*"],
+      "js": ["storage.js", "communityApi.js", "content.js"]
+    }
+  ]
+}
