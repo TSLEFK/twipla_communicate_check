@@ -35,8 +35,12 @@
   }
 
   try {
+    console.log('Starting community check for ID:', COMMUNITY_ID);
     const members = await getCommunityMembers(COMMUNITY_ID);
+    console.log('Fetched members:', members);
+    
     if (!members || members.length === 0) {
+      console.log('No members found, returning');
       // nothing to check
       return;
     }
@@ -44,13 +48,16 @@
     const anchors = Array.from(
       document.querySelectorAll('a[href*="x.com/"], a[href*="twitter.com/"]')
     );
+    console.log('Found anchors:', anchors.length);
     const seen = new Set();
 
     for (const a of anchors) {
       const username = extractUsernameFromUrl(a.href);
+      console.log('Checking link:', a.href, 'username:', username);
       if (!username || seen.has(username.toLowerCase())) continue;
       seen.add(username.toLowerCase());
       if (members.includes(username)) {
+        console.log('Found member:', username);
         appendBadge(a);
       }
     }
