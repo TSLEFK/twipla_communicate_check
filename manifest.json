@@ -11,7 +11,7 @@
   ],
   "content_scripts": [
     {
-      "matches": ["https://twipla.jp/*"],
+      "matches": ["https://twipla.jp/*", "https://x.com/*"],
       "js": ["storage.js", "communityApi.js", "content.js"]
     }
   ]

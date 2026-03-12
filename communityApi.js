@@ -11,12 +11,8 @@ const CACHE_KEY = 'community_members';
 const CACHE_TTL = 1000 * 60 * 60; // 1 hour
 
 // fetchCommunityPage is intended to be called from a Twipla extension
-// content script or background script.  Because the request targets
-// an internal x.com endpoint that doesn't allow cross‑site credentials,
-// we explicitly avoid sending cookies/credentials.  Calling this from a
-// normal web page off a different origin will hit CORS errors unless
-// the request is proxied.
-async function fetchCommunityPage(communityId, cursor) {
+// content script.  Because the manifest declares host_permissions for\n// https://x.com/*, the content script injects into both Twipla and X pages.  
+// When called from within an x.com page context, fetch with\n// credentials: 'include' can include X.com cookies, allowing authentication\n// with the internal GraphQL API.\nasync function fetchCommunityPage(communityId, cursor) {
   const url = `${GRAPHQL_BASE}/${QUERY_ID}/${QUERY_ENDPOINT}`;
   const variables = {
     community_rest_id: communityId,
@@ -24,16 +20,12 @@ async function fetchCommunityPage(communityId, cursor) {
   };
   if (cursor) variables.cursor = cursor;
 
-  // When running inside the Twipla extension we cannot send
-  // credentials to x.com because the remote endpoint does not
-  // set `Access-Control-Allow-Credentials: true` on its preflight
-  // response.  Including credentials triggers a CORS failure
-  // (see the devtools error) so we omit them here.  If you need
-  // to authenticate, proxy the request through a server you control
-  // instead of calling the GraphQL API directly from the page.
+  // When running as a content script on x.com, fetch can use 'include' to
+  // send X.com cookies for authentication. This resolves 403 errors that occur
+  // when credentials are omitted.
   const response = await fetch(url, {
     method: 'POST',
-    // credentials: 'omit', // explicit but unnecessary, omitted by default
+    credentials: 'include',
     headers: {
       'content-type': 'application/json',
       'accept': 'application/json, text/javascript, */*; q=0.01'
