@@ -4,7 +4,9 @@ Xコミュニティ所属チェック Chrome拡張機能 仕様書
 
 Twiplaイベントページ上に表示される参加者の **X（旧Twitter）アカウントが特定のXコミュニティに所属しているかを自動判定し、ページ上に表示するChrome拡張機能**を開発する。
 
-本拡張は **Twiplaページ閲覧時のみ動作**し、ページ内に存在するXアカウントリンクを検出してコミュニティ所属を確認する。
+本拡張は **拡張機能内のローカルデータベースに Xコミュニティメンバーを蓄積**し、Twiplaページ閲覧時にそのデータベースを照合してコミュニティ所属を判定する。
+
+データベースは一定期間（24時間）有効であり、期限切れ時に自動更新される。
 
 ---
 
@@ -45,14 +47,40 @@ https://twipla.jp/events/xxxxxxxx
 
 # 4. 判定対象
 
-Twiplaページ内に存在する以下のリンク
+## Twiplaの参加者一覧要素
+
+Twiplaイベントページの参加者一覧は `<li>` 要素で囲まれた以下の構造：
+
+```html
+<li>
+  <img ... class="lazyload circle" ...>
+  &nbsp;
+  <a href="/users/{userId}" class="card namelist" n="{displayName}" s="{username}" title="@{username}" target="_self">
+    {displayName}
+  </a>
+</li>
+```
+
+### 抽出対象
+
+Twiplaの参加者リンク `<a class="card namelist">` から以下を抽出：
+
+| 要素 | 取得方法 | 用途 |
+|-----|--------|------|
+| `<a>` タグ | `a.card.namelist` セレクター | バッジ挿入位置 |
+| ユーザー名 | `title` 属性から `@` を除去、または `s` 属性から取得 | X コミュニティメンバーと照合 |
+| 表示名 | `n` 属性またはテキスト内容 | UI表示用 |
+
+---
+
+## X/Twitter ドメインのリンク （フォールバック）
+
+Twiplaページ内に X/Twitter の直接リンク（プロフィールカード内など）がある場合も対応：
 
 ```
 https://x.com/{username}
 https://twitter.com/{username}
 ```
-
-これらの `{username}` を抽出し、コミュニティ所属判定を行う。
 
 ---
 
@@ -69,7 +97,7 @@ https://x.com/i/communities/1861234567890123456
 ここで使用する値
 
 ```
-community_id = 1861234567890123456
+community_id = 1508768613662343173
 ```
 
 ---
@@ -78,65 +106,134 @@ community_id = 1861234567890123456
 
 Xの内部GraphQL APIを利用してコミュニティメンバーを取得する。
 
-API例
+## API エンドポイント
 
 ```
-https://x.com/i/api/graphql/{queryId}/CommunityMembers
+https://x.com/i/api/graphql/{queryId}/CommunityMembersSlice
 ```
 
-必要パラメータ
+### リクエスト形式
 
 ```
-communityId
-cursor (ページング用)
-count
+POST /i/api/graphql/{queryId}/CommunityMembersSlice
+Content-Type: application/json
+User-Agent: <browser-user-agent>
+X-CSRF-Token: <CSRF-token>
+X-Client-UUID: <UUID-v4>
+Credentials: include
+
+{
+  "variables": {
+    "community_rest_id": "1508768613662343173",
+    "count": 20,
+    "cursor": "<pagination_cursor>"
+  }
+}
 ```
 
-取得レスポンス例
+### 必須ヘッダー
+
+| ヘッダー名 | 説明 | 入手方法 |
+|-----------|------|--------|
+| `Content-Type` | `application/json` | 固定 |
+| `User-Agent` | ブラウザのUser-Agent | navigator.userAgent |
+| `X-CSRF-Token` | CSRF トークン | X.com の `ct0` Cookie から取得 |
+| `X-Client-UUID` | クライアント識別用UUID | UUID v4 を生成 |
+| `Credentials` | `include` | Cookie/Session を含める |
+
+###CORS対応
+
+X.com へのリクエストは twipla.jp ドメインから直接フェッチすると CORS エラーが発生する。
+
+**対応:**
+- **Service Worker 経由でリクエストを中継**
+  - Content Script から Service Worker へメッセージ送信
+  - Service Worker が X.com へ fetch（CORS 不適用）
+  - レスポンスをContent Script に返送
+  - この方式により CORS エラーを回避
+
+### レスポンス例
 
 ```json
 {
   "data": {
-    "communityMembersSlice": {
-      "items": [
-        {
-          "user_results": {
+    "community_by_rest_id": {
+      "members_slice": {
+        "items": [
+          {
             "result": {
-              "legacy": {
-                "screen_name": "example_user"
+              "community_relationship": {
+                "user_results": {
+                  "result": {
+                    "legacy": {
+                      "screen_name": "example_user"
+                    }
+                  }
+                }
               }
             }
           }
-        }
-      ]
+        ],
+        "continuation": "<next_pagination_cursor>"
+      }
     }
   }
 }
 ```
 
-取得する値
+---
 
-```
-screen_name
-```
+## QueryID の動的検出
+
+Xは定期的に GraphQL の QueryID を変更するため、**ハードコードされたQueryIDは陳腐化しやすい。**
+
+### 対応戦略
+
+**ネットワークインターセプション** を用いて実際のQueryIDを自動検出：
+
+1. **Service Worker でネットワークをモニタリング**
+   - X.comへのGET/POSTリクエストをフック
+   - GraphQL APIリクエストのプロトコルを解析
+   - 実際に使用されているQueryIDを抽出
+
+2. **検出結果をStorage に保存**
+   ```json
+   {
+     "queryId": "bJL6MePns78FJAY930RqDQ",
+     "queryIdDetectedAt": 1710381600000
+   }
+   ```
+
+3. **フォールバック機構**
+   - Service Worker で自動検出できない場合
+   - 事前登録された複数のQueryID候補を順序試行
+
+### 実装詳細
+
+- Service Worker (background.js) で `chrome.webRequest` または `fetch` をインターセプト
+- X.com ドメインへのGET/POSTで `graphql/%s/CommunityMembersSlice` パターンを検出
+- マッチしたQueryIDをローカルストレージに保存
+- 次回以降、保存されたQueryIDを優先的に使用
 
 ---
 
-# 7. データ取得仕様
+# 7. データベース仕様
 
-## 初回アクセス時
+## 目的
 
-1. GraphQL APIからコミュニティメンバー取得
-2. 全ページ取得（cursorによるページング）
-3. メンバー一覧をローカル保存
+Xコミュニティメンバーの一覧を拡張機能内のローカルデータベースに保持し、Twiplaページロード時に数十〜数千規模のメンバーリストから高速に照合できるようにする。
 
-保存場所
+---
+
+## データベース構成
+
+### 保存場所
 
 ```
 chrome.storage.local
 ```
 
-保存データ例
+### 保存データ構造
 
 ```json
 {
@@ -145,79 +242,146 @@ chrome.storage.local
     "userB",
     "userC"
   ],
-  "lastUpdated": 1700000000
+  "lastUpdated": 1700000000,
+  "communityId": "1508768613662343173"
 }
 ```
 
+### 各フィールド
+
+| フィールド | 型 | 説明 |
+|----------|-----|------|
+| community_members | string[] | コミュニティに所属するユーザー名（screen_name）の配列 |
+| lastUpdated | number | データベース更新時刻（Unix timestamp in milliseconds） |
+| communityId | string | 対象コミュニティID |
+
 ---
 
-## キャッシュ仕様
+## データベース更新フロー
 
-キャッシュ時間
+### 初期データ取得
+
+1. Twiplaページロード時、データベースを確認
+2. データベースが空 **または** キャッシュが有効期限切れ の場合：
+   - GraphQL APIからコミュニティメンバー全件取得（ページング対応）
+   - データベースに上書き保存
+3. データベースが有効な場合：
+   - API呼び出しをスキップ
+   - 保存済みデータベースを使用
+
+### キャッシュ有効期限
 
 ```
-1時間
+24時間（86400000ミリ秒）
 ```
 
-キャッシュが有効な場合
+有効期限を超過した場合、次のTwiplaページロード時に自動更新される。
 
-```
-API呼び出しを行わない
-```
+---
+
+## メモリ効率
+
+想定するコミュニティサイズ：**100人〜10000人**
+
+- 10,000ユーザーのscreen_nameリスト（平均10文字） = 約100KB
+- chrome.storage.local の容量制限： **10MB**
+
+パフォーマンス上の問題なし。
 
 ---
 
 # 8. Twiplaページ処理
 
-Twiplaページロード時に以下を実行する。
+Twiplaイベント参加者一覧ページ（`https://twipla.jp/events/{eventId}`）で以下を実行する。
 
-### 1. ページ内リンク取得
+---
 
+## 処理フロー
+
+### 1. 参加者リンク要素の取得
+
+**対象セレクター:**
+
+```javascript
+document.querySelectorAll('a.card.namelist')
 ```
-a[href*="x.com/"]
-a[href*="twitter.com/"]
-```
 
-### 2. username抽出
+**各参加者情報:**
+- ユーザー名は `title` 属性（`@username` 形式）または `s` 属性から取得
+- 例: `<a title="@okojo417" s="okojo417">` → username = `okojo417`
 
-```
-https://x.com/{username}
-```
+---
 
-↓
+### 2. ユーザー名の抽出
 
-```
-username
+```javascript
+// title 属性から @ を除去
+const username = link.getAttribute('title').replace(/^@/, '');
+
+// または s 属性から直接取得
+const username = link.getAttribute('s');
 ```
 
 ---
 
 ### 3. コミュニティ所属判定
 
-```
+```javascript
 members.includes(username)
 ```
 
 ---
 
-### 4. ページ表示
+### 4. バッジ表示
 
-所属ユーザーのリンクの後ろにバッジ表示
+所属ユーザーのリンク **直後** にバッジを挿入
 
-例
-
+**HTML構造(変更前):**
+```html
+<li>
+  <img ... >
+  &nbsp;
+  <a class="card namelist" ...>らむ茶</a>
+</li>
 ```
-@userA   ✔ Community
-@userB
-@userC   ✔ Community
+
+**HTML構造(変更後):**
+```html
+<li>
+  <img ... >
+  &nbsp;
+  <a class="card namelist" ...>らむ茶</a>
+  <span class="community-badge" style="color: green; font-weight: bold;">✔</span>
+</li>
 ```
 
-表示仕様
+**バッジ仕様:**
 
-```
-色: 緑
-文字: ✔ Community
-フォント: bold
+| 属性 | 値 |
+|------|-----|
+| 文字 | `✔` |
+| 色 | `#22c55e` (緑) |
+| フォント | bold |
+| マージン | `0 0 0 4px` (左マージン 4px) |
+
+---
+
+### 5. 重複チェック
+
+同じユーザーが複数回表示される場合、バッジは1回のみ追加
+
+**実装例:**
+```javascript
+const processed = new Set();
+document.querySelectorAll('a.card.namelist').forEach((link) => {
+  const username = link.getAttribute('s');
+  if (!processed.has(username)) {
+    if (members.includes(username)) {
+      appendBadge(link);
+    }
+    processed.add(username);
+  }
+});
 ```
 
 ---
@@ -235,7 +399,9 @@ Manifest v3
 ## 必要権限
 
 ```
-storage
+storage          - データベースとQueryID保存
+cookies          - X.com CSRF トークン (ct0) の読み取り
+webRequest       - GraphQL QueryID自動検出
 ```
 
 ---
@@ -244,16 +410,35 @@ storage
 
 ```
 https://x.com/*
+https://twipla.jp/*
+```
+
+---
+
+## background_scripts (Service Worker)
+
+**QueryID の動的検出用**
+
+```javascript
+// background.js
+// X.comへのリクエストをインターセプトして、GraphQL QueryIDを自動検出
+// HTTP レスポンスヘッダまたはリクエスト URL から実際のQueryIDを抽出
 ```
 
 ---
 
 ## content_scripts
 
-対象
+対象ページ：
 
 ```
 https://twipla.jp/*
+```
+
+スクリプト：
+
+```
+storage.js, communityApi.js, content.js
 ```
 
 ---
@@ -263,9 +448,10 @@ https://twipla.jp/*
 ```
 x-community-checker/
  ├ manifest.json
- ├ content.js
- ├ communityApi.js
- └ storage.js
+ ├ background.js          (Service Worker; QueryID自動検出)
+ ├ content.js             (Twiplaページ内リンク走査)
+ ├ communityApi.js        (GraphQL API呼び出し＆キャッシュ)
+ └ storage.js             (chrome.storage.local ラッパー)
 ```
 
 ---
@@ -275,15 +461,20 @@ x-community-checker/
 ```
 Twiplaページロード
       ↓
-content.js起動
+DB有効期限確認
       ↓
-コミュニティメンバー取得
+[有効期限切れ？]
+      ├─ YES: GraphQL APIからメンバー取得
+      |       ↓
+      |       DBに保存
+      |       ↓
+      └─→ DB内のメンバーリスト取得
       ↓
-Twipla内Xリンク検出
+参加者リンク検出（a.card.namelist）
       ↓
 username抽出
       ↓
-コミュニティメンバーと照合
+DBのメンバーリストと照合
       ↓
 所属ユーザーにバッジ表示
 ```
@@ -381,32 +572,69 @@ X APIアクセスは
 
 ---
 
-# 16. 制約事項
+# 16. 制約事項と対応
 
-Xの内部GraphQL APIは
+## Xの内部GraphQL APIについて
 
-```
-非公開API
-```
-
-のため
+Xの内部GraphQL APIは **非公開API** であるため、以下のような変更がありえる：
 
 ```
-queryId変更
+- QueryID の変更
+- エンドポイントのURL構造変更
+- レスポンス構造の変更
 ```
 
-などにより動作が変更される可能性がある。
+---
 
-その場合は拡張の更新が必要となる。
+## QueryID 変更への自動対応
+
+本拡張は **Service Worker による自動検出** で、QueryID変更に対応する：
+
+### 動作フロー
+
+1. **X.com への リクエストをモニタリング**
+   - Service Workerが X.com へのネットワークリクエストをフック
+   - `graphql/.../CommunityMembersSlice` パターンを検出
+
+2. **QueryID を自動抽出**
+   - リクエストURLから実際のQueryIDを抽出
+   - `chrome.storage.local` に保存
+
+3. **次回以降、保存されたQueryIDを優先使用**
+   - APIコール時に自動的に保存されたQueryIDを参照
+
+### 自動検出が失敗した場合
+
+- フォールバック：複数の既知QueryID候補をリスト化
+- 順序試行（リトライ機構）
+- すべて失敗時：コンソール警告 + 拡張の機能停止
+
+---
+
+## その他の変更への対応
+
+**エンドポイントURLやレスポンス構造が変更された場合、手動での拡張更新が必要。**
 
 ---
 
 # 17. 成功条件
 
-Twiplaイベントページを開いた際に
+Twiplaイベント参加者一覧ページ（`https://twipla.jp/events/{eventId}`）を開いた際に、以下が確認できること：
 
 ```
-コミュニティ所属ユーザーが自動表示される
+✔ バッジがコミュニティ所属ユーザーの名前の右隣に表示される
 ```
 
-こと。
+**表示例：**
+
+```
+ユーザーA      ← バッジなし（非メンバー）
+ユーザーB  ✔   ← 緑色チェックマーク（メンバー）
+ユーザーC      ← バッジなし（非メンバー）
+ユーザーD  ✔   ← 緑色チェックマーク（メンバー）
+```
+
+**要件：**
+- ✅ コミュニティメンバーのみバッジが表示
+- ✅ バッジは（`✔`）の形で、緑色（#22c55e）
+- ✅ ユーザー一覧の読み込み完了時に自動的に実行

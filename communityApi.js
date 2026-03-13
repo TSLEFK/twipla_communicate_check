@@ -1,19 +1,46 @@
 // communityApi.js
 // Functions for fetching community members from X internal GraphQL API and handling caching.
 
-// NOTE: this relies on an internal, undocumented API and the queryId may change.
-// update QUERY_ID when necessary.
 const GRAPHQL_BASE = 'https://x.com/i/api/graphql';
-const QUERY_ID = 'bJL6MePns78FJAY930RqDQ';
 const QUERY_ENDPOINT = 'CommunityMembersSlice';
 const PAGE_SIZE = 20;
 const CACHE_KEY = 'community_members';
-const CACHE_TTL = 1000 * 60 * 60; // 1 hour
+const CACHE_TTL = 1000 * 60 * 60 * 24; // 24 hours
+
+let cachedQueryId = null;
+
+/**
+ * Retrieve the GraphQL QueryID from the service worker.
+ * Queries are automatically detected from x.com requests and cached.
+ * If detection fails, falls back to a known QueryID list.
+ */
+async function getQueryId() {
+  if (cachedQueryId) {
+    return cachedQueryId;
+  }
+
+  try {
+    const response = await chrome.runtime.sendMessage({ action: 'getQueryId' });
+    if (response.success) {
+      cachedQueryId = response.queryId;
+      console.log('[X Community Checker] Using QueryID:', cachedQueryId);
+      return cachedQueryId;
+    }
+  } catch (err) {
+    console.error('[X Community Checker] Error fetching QueryID:', err);
+  }
+
+  // Default fallback if message fails
+  cachedQueryId = 'bJL6MePns78FJAY930RqDQ';
+  console.warn('[X Community Checker] Using fallback QueryID:', cachedQueryId);
+  return cachedQueryId;
+}
 
 // fetchCommunityPage fetches GraphQL data from X.com through the service worker
 // to avoid CORS errors when called from Twipla pages.
 async function fetchCommunityPage(communityId, cursor) {
-  const url = `${GRAPHQL_BASE}/${QUERY_ID}/${QUERY_ENDPOINT}`;
+  const queryId = await getQueryId();
+  const url = `${GRAPHQL_BASE}/${queryId}/${QUERY_ENDPOINT}`;
   const variables = {
     community_rest_id: communityId,
     count: PAGE_SIZE

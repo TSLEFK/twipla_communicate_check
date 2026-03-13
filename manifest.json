@@ -4,10 +4,13 @@
   "version": "1.0",
   "description": "Detects whether Twitter (X) accounts on Twipla event pages belong to a specific X community.",
   "permissions": [
-    "storage"
+    "storage",
+    "cookies",
+    "webRequest"
   ],
   "host_permissions": [
-    "https://x.com/*"
+    "https://x.com/*",
+    "https://twipla.jp/*"
   ],
   "background": {
     "service_worker": "background.js"

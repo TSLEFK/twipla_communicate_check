@@ -1,0 +1,23 @@
+{
+  "name": "x-community-checker",
+  "version": "1.0.0",
+  "description": "Chrome extension to check X community membership on Twipla event pages",
+  "main": "content.js",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
+  },
+  "keywords": [
+    "chrome",
+    "extension",
+    "twipla",
+    "twitter",
+    "community"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
