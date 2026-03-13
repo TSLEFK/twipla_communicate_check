@@ -28,13 +28,23 @@
    * @param {HTMLElement} link - The <a> element
    */
   function appendBadge(link) {
+    // Check if already has a badge
+    if (link.querySelector('.community-badge')) {
+      return;
+    }
+    
     const badge = document.createElement('span');
-    badge.textContent = '✔';
+    badge.textContent = '✔ ';
     badge.className = 'community-badge';
+    badge.style.display = 'inline';
     badge.style.color = '#22c55e';
     badge.style.fontWeight = 'bold';
-    badge.style.marginLeft = '4px';
-    link.parentNode.insertBefore(badge, link.nextSibling);
+    badge.style.fontSize = '14px';
+    badge.style.marginRight = '2px';
+    badge.style.whiteSpace = 'nowrap';
+    badge.title = 'Community Member'; // Tooltip
+    // Insert badge BEFORE the user name for better space usage
+    link.insertBefore(badge, link.firstChild);
   }
 
   // wait for DOM content to load
@@ -57,11 +67,14 @@
     console.log('[X Community Checker] Found participant links:', participantLinks.length);
 
     const processed = new Set();
+    const debugInfo = [];
 
     for (const link of participantLinks) {
       const username = extractUsernameFromTwiplaLink(link);
       if (!username) {
         console.warn('[X Community Checker] Could not extract username from link:', link);
+        console.warn('[X Community Checker]   s attribute:', link.getAttribute('s'));
+        console.warn('[X Community Checker]   title attribute:', link.getAttribute('title'));
         continue;
       }
 
@@ -73,21 +86,25 @@
 
       // Check membership (case-insensitive)
       const isMember = members.some((m) => m.toLowerCase() === username.toLowerCase());
+      
+      const matchedMember = members.find((m) => m.toLowerCase() === username.toLowerCase());
+      debugInfo.push({
+        extracted: username,
+        matched: matchedMember || 'NOT FOUND',
+        isMember: isMember
+      });
+      
       if (isMember) {
-        console.log('[X Community Checker] Found community member:', username);
+        console.log('[X Community Checker] ✓ Found community member:', username, '(matched:', matchedMember + ')');
         appendBadge(link);
+      } else {
+        console.log('[X Community Checker] ✗ Not a community member:', username);
       }
     }
 
     console.log('[X Community Checker] Processing complete. Total processed:', processed.size);
+    console.table(debugInfo);
   } catch (err) {
     console.error('[X Community Checker] Community check failed:', err);
-  }
-})();
-        appendBadge(a);
-      }
-    }
-  } catch (err) {
-    console.error('Community check failed', err);
   }
 })();

@@ -4,9 +4,11 @@
 // 2. Automatically detects and stores GraphQL QueryID from x.com requests
 
 const STORAGE_KEY_QUERY_ID = 'graphql_query_id';
-const COMMUNITY_MEMBERS_SLICE_PATTERN = /graphql\/([a-zA-Z0-9_-]+)\/CommunityMembersSlice/;
+// Updated pattern to detect both old and new endpoint patterns
+const COMMUNITY_MEMBERS_SLICE_PATTERN = /graphql\/([a-zA-Z0-9_-]+)\/(CommunityMembersSlice|membersSliceTimeline_Query)/;
 const FALLBACK_QUERY_IDS = [
-  'bJL6MePns78FJAY930RqDQ' // As of Mar 2026
+  'WSbJGJjZaVasSj9bnqSZSA', // membersSliceTimeline_Query (Mar 2026)
+  'bJL6MePns78FJAY930RqDQ'   // CommunityMembersSlice (older, fallback)
 ];
 
 /**
@@ -21,23 +23,38 @@ function generateUUID() {
 }
 
 /**
- * Retrieve CSRF token from X.com cookies or local storage
+ * Retrieve CSRF token from X.com cookies
  * X.com uses ct0 cookie for CSRF protection
  */
 async function getCsrfToken() {
   try {
-    // Try to get from cookies
     const cookies = await chrome.cookies.getAll({ domain: '.x.com' });
     const csrfCookie = cookies.find((c) => c.name === 'ct0');
     if (csrfCookie) {
+      console.log('[X Community Checker] ct0 CSRF token found');
       return csrfCookie.value;
     }
   } catch (err) {
-    console.warn('[X Community Checker] Failed to retrieve CSRF from cookies:', err);
+    console.warn('[X Community Checker] Failed to retrieve ct0 cookie:', err.message);
   }
-  
-  // Fallback: generate a placeholder UUID if cookie not available
-  return generateUUID();
+  return null;
+}
+
+/**
+ * Retrieve auth token from X.com cookies for Bearer authorization
+ */
+async function getAuthToken() {
+  try {
+    const cookies = await chrome.cookies.getAll({ domain: '.x.com' });
+    const authCookie = cookies.find((c) => c.name === 'auth_token');
+    if (authCookie) {
+      console.log('[X Community Checker] auth_token found');
+      return authCookie.value;
+    }
+  } catch (err) {
+    console.warn('[X Community Checker] Failed to retrieve auth_token:', err.message);
+  }
+  return null;
 }
 
 /**
@@ -120,36 +137,83 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
  */
 async function handleGraphQLRequest(request) {
   const csrfToken = await getCsrfToken();
+  const authToken = await getAuthToken();
+  
+  // Use a proper browser user-agent
+  const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  
+  const requestBody = request.body;
+  console.log('[X Community Checker] === GraphQL Request Debug ===');
+  console.log('[X Community Checker] URL:', request.url);
+  console.log('[X Community Checker] Variables:', JSON.stringify(requestBody.variables));
+  console.log('[X Community Checker] Auth token present:', !!authToken);
+  console.log('[X Community Checker] CSRF token present:', !!csrfToken);
+  
+  const headers = {
+    'content-type': 'application/json',
+    'accept': '*/*',
+    'accept-encoding': 'gzip, deflate, br',
+    'accept-language': 'ja-JP,ja;q=0.9,en;q=0.8',
+    'cache-control': 'no-cache',
+    'pragma': 'no-cache',
+    'user-agent': USER_AGENT,
+    'x-client-uuid': generateUUID(),
+    'x-client-transaction-id': generateUUID(),
+    'x-twitter-client-language': 'ja'
+  };
+  
+  // Add CSRF token if available
+  if (csrfToken) {
+    headers['x-csrf-token'] = csrfToken;
+  }
+  
+  // Add Bearer authorization if auth_token is available
+  if (authToken) {
+    headers['authorization'] = `Bearer ${authToken}`;
+    console.log('[X Community Checker] Added Bearer authorization header');
+  }
+  
+  console.log('[X Community Checker] Headers:', Object.keys(headers).join(', '));
+  
   const response = await fetch(request.url, {
     method: 'POST',
     credentials: 'include',
-    headers: {
-      'content-type': 'application/json',
-      'accept': 'application/json, text/javascript, */*; q=0.01',
-      'accept-language': 'ja-JP,ja;q=0.9,en;q=0.8',
-      'cache-control': 'no-cache',
-      'pragma': 'no-cache',
-      'user-agent': navigator.userAgent,
-      'x-client-uuid': generateUUID(),
-      'x-csrf-token': csrfToken
-    },
-    body: JSON.stringify(request.body)
+    headers,
+    body: JSON.stringify(requestBody)
   });
 
+  console.log('[X Community Checker] === GraphQL Response ===');
+  console.log('[X Community Checker] Status:', response.status);
+  
   const text = await response.text();
+  console.log('[X Community Checker] Response length:', text.length);
+  
+  if (text) {
+    console.log('[X Community Checker] Response preview:', text.slice(0, 500));
+  } else {
+    console.log('[X Community Checker] Response body is empty');
+  }
+  
+  if (response.status === 403) {
+    console.error('[X Community Checker] ❌ 403 Forbidden');
+    console.error('[X Community Checker] This usually means the API credentials or community ID is invalid.');
+  }
+  
   let data;
   try {
     data = JSON.parse(text);
   } catch (e) {
+    console.error('[X Community Checker] JSON parse error:', e.message);
     throw new Error(
-      `Failed to parse response as JSON. Status: ${response.status}, Body: ${text.slice(0, 200)}`
+      `Failed to parse response as JSON. Status: ${response.status}, Body: ${text}`
     );
   }
   
   if (!response.ok) {
+    console.error('[X Community Checker] ❌ GraphQL error:', data);
     throw new Error(`HTTP ${response.status}: ${JSON.stringify(data).slice(0, 200)}`);
   }
   
-  console.log('GraphQL response:', data);
+  console.log('[X Community Checker] ✓ GraphQL request successful');
   return data;
 }
