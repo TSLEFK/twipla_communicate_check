@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "X Community Checker",
+  "name": "Twitter Community Checker",
   "version": "1.0",
-  "description": "Detects whether Twitter (X) accounts on Twipla event pages belong to a specific X community.",
+  "description": "TwiplaでTwitterコミュニティに参加しているかを確認できます",
   "permissions": [
     "storage",
     "cookies",

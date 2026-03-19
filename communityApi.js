@@ -24,7 +24,6 @@ async function getQueryId() {
     const response = await chrome.runtime.sendMessage({ action: 'getQueryId' });
     if (response.success) {
       cachedQueryId = response.queryId;
-      console.log('[X Community Checker] Using QueryID:', cachedQueryId);
       return cachedQueryId;
     }
   } catch (err) {
@@ -56,9 +55,6 @@ async function fetchCommunityPage(communityId, cursor) {
     }
   };
 
-  console.log('[X Community Checker] Fetching community members for:', communityId);
-  console.log('[X Community Checker] Using endpoint:', QUERY_ENDPOINT);
-  
   // Relay the request through the service worker rather than calling fetch directly.
   // This avoids CORS restrictions that would apply when fetching from twipla.jp to x.com.
   const response = await chrome.runtime.sendMessage({
@@ -86,10 +82,8 @@ async function fetchCommunityMembers(communityId) {
 
   do {
     pageCount++;
-    console.log('[X Community Checker] Fetching page', pageCount);
-    
     const data = await fetchCommunityPage(communityId, cursor);
-    
+
     // New endpoint structure: membersSliceTimeline_Query
     const slice = data?.data?.communityResults?.result?.members_slice;
     if (!slice || !Array.isArray(slice.items_results)) {
@@ -97,29 +91,24 @@ async function fetchCommunityMembers(communityId) {
       break;
     }
 
-    console.log('[X Community Checker] Found', slice.items_results.length, 'users on page', pageCount);
-    
     for (const item of slice.items_results) {
       // New structure: item.result.core.screen_name
       const screenName = item?.result?.core?.screen_name;
       if (screenName) {
         members.push(screenName);
-        console.log('[X Community Checker] Added member:', screenName);
       }
     }
-    
+
     // Get cursor for next page pagination
     // The cursor is nested in slice_info object
     cursor = slice.slice_info?.next_cursor || null;
     if (cursor) {
-      console.log('[X Community Checker] Next cursor found, will fetch page', pageCount + 1);
-    } else {
-      console.log('[X Community Checker] No next cursor, pagination complete');
+      // console.log('[X Community Checker] Next cursor found, will fetch page', pageCount + 1);
     }
   } while (cursor);
 
-  console.log('[X Community Checker] Fetched total', members.length, 'members across', pageCount, 'pages');
-  
+  console.log('[X Community Checker] finished fetching.');
+
   // remove duplicates just in case
   return Array.from(new Set(members));
 }
@@ -157,15 +146,14 @@ async function setCachedMembers(members) {
  */
 async function getCommunityMembers(communityId) {
   let members = await getCachedMembers();
-  
+
   // If cache exists and is fresh, return immediately
   if (members && members.length > 0) {
-    console.log('[X Community Checker] Using cached members, count:', members.length);
     // Update in background (don't await - return to user immediately)
     refreshCommunityMembersInBackground(communityId);
     return members;
   }
-  
+
   // Cache is empty or expired - fetch fresh data
   console.log('[X Community Checker] Cache miss or expired, fetching fresh data...');
   members = await fetchCommunityMembers(communityId);
@@ -178,10 +166,8 @@ async function getCommunityMembers(communityId) {
  */
 async function refreshCommunityMembersInBackground(communityId) {
   try {
-    console.log('[X Community Checker] Background refresh started');
     const freshMembers = await fetchCommunityMembers(communityId);
     await setCachedMembers(freshMembers);
-    console.log('[X Community Checker] Background refresh complete, updated', freshMembers.length, 'members');
   } catch (err) {
     console.warn('[X Community Checker] Background refresh failed:', err.message);
     // Silently fail - we already have cached data

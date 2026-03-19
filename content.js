@@ -55,7 +55,7 @@
   try {
     console.log('[X Community Checker] Starting community check for ID:', COMMUNITY_ID);
     const members = await getCommunityMembers(COMMUNITY_ID);
-    console.log('[X Community Checker] Fetched members:', members);
+    // console.log('[X Community Checker] Fetched members:', members);
 
     if (!members || members.length === 0) {
       console.log('[X Community Checker] No members found');
@@ -95,15 +95,15 @@
       });
       
       if (isMember) {
-        console.log('[X Community Checker] ✓ Found community member:', username, '(matched:', matchedMember + ')');
+        // console.log('[X Community Checker] ✓ Found community member:', username, '(matched:', matchedMember + ')');
         appendBadge(link);
       } else {
-        console.log('[X Community Checker] ✗ Not a community member:', username);
+        // console.log('[X Community Checker] ✗ Not a community member:', username);
       }
     }
 
     console.log('[X Community Checker] Processing complete. Total processed:', processed.size);
-    console.table(debugInfo);
+    // console.table(debugInfo);
   } catch (err) {
     console.error('[X Community Checker] Community check failed:', err);
   }
